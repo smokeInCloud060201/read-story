@@ -653,3 +653,105 @@ body.work-mode .confidential-badge {
     vertical-align: middle;
     text-transform: uppercase;
 }
+
+/* TTS Settings Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--ui-bg);
+    padding: 2rem;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--ui-border);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.modal-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+    font-family: var(--font-sans);
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--ui-text);
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ui-text);
+    font-family: var(--font-sans);
+}
+
+.form-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--ui-border);
+    border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+}
+
+.form-range {
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+.range-value {
+    font-size: 0.9rem;
+    color: var(--text-color);
+    float: right;
+    font-family: monospace;
+}
+
+/* TTS Highlight */
+.tts-highlight {
+    background-color: rgba(255, 255, 0, 0.4);
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+[data-theme="dark"] .tts-highlight {
+    background-color: rgba(255, 215, 0, 0.3);
+    color: #fff;
+}
+
+[data-theme="sepia"] .tts-highlight {
+    background-color: rgba(210, 180, 140, 0.6);
+}

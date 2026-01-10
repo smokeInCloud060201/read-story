@@ -35,6 +35,16 @@
                     <button class="control-btn" onclick="adjustFontSize(-2)" aria-label="Decrease Font Size">A−</button>
                     <button class="control-btn" onclick="adjustFontSize(2)" aria-label="Increase Font Size">A+</button>
                 </div>
+
+                <!-- TTS Controls -->
+                <div class="control-group">
+                    <button class="control-btn" onclick="toggleAudio()" id="ttsBtn" aria-label="Play Audio">
+                        🔊 Play
+                    </button>
+                    <button class="control-btn" onclick="toggleSettings()" id="settingsBtn" aria-label="TTS Settings">
+                        ⚙️
+                    </button>
+                </div>
             </div>
         </div>
     </header>
@@ -140,6 +150,30 @@
 
     </main>
 
+    <!-- TTS Settings Modal -->
+    <div class="modal-overlay" id="ttsSettingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">TTS Settings</h3>
+                <button class="close-modal" onclick="toggleSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="voiceSelect">Voice</label>
+                    <select id="voiceSelect" class="form-select" onchange="updateVoice()">
+                        <option value="">Default</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="rateRange">Speed: <span id="rateValue"
+                            class="range-value">1.0x</span></label>
+                    <input type="range" id="rateRange" class="form-range" min="0.5" max="2.0" step="0.1" value="1.0"
+                        oninput="updateRate()">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Reader Logic
         const body = document.body;
@@ -230,6 +264,256 @@
 
         // Run Init
         initReader();
+
+        // TTS Logic
+        const ttsBtn = document.getElementById('ttsBtn');
+        const voiceSelect = document.getElementById('voiceSelect');
+        const rateRange = document.getElementById('rateRange');
+        const rateValue = document.getElementById('rateValue');
+
+        // State
+        let isSpeaking = false;
+        let isPaused = false;
+
+        let ttsSentences = [];     // Array of span elements
+        let currentSentenceIdx = 0;
+        let voices = [];
+        let selectedVoiceIndex = -1;
+        let currentRate = 1.0;
+
+        // Dom Prepared Flag
+        let isContentPrepared = false;
+
+        // Settings Modal
+        function toggleSettings() {
+            const modal = document.getElementById('ttsSettingsModal');
+            modal.classList.toggle('active');
+            if (modal.classList.contains('active')) {
+                loadVoices();
+            }
+        }
+
+        // Voice Loading (Existing robust version)
+        function loadVoices() {
+            const allVoices = window.speechSynthesis.getVoices();
+            if (allVoices.length === 0) return;
+
+            voices = allVoices.filter(voice => voice.lang.includes('vi'));
+
+            voiceSelect.innerHTML = '';
+
+            if (voices.length === 0) {
+                const option = document.createElement('option');
+                option.textContent = "No Vietnamese voices found";
+                option.value = -1;
+                voiceSelect.appendChild(option);
+                voiceSelect.disabled = true;
+            } else {
+                voiceSelect.disabled = false;
+
+                voices.forEach((voice, index) => {
+                    const option = document.createElement('option');
+                    option.textContent = `${voice.name} (${voice.lang})`;
+                    option.value = index;
+                    voiceSelect.appendChild(option);
+                });
+
+                const savedVoiceName = localStorage.getItem('ttsVoiceName');
+                let foundIndex = -1;
+
+                if (savedVoiceName) foundIndex = voices.findIndex(v => v.name === savedVoiceName);
+
+                if (foundIndex !== -1) {
+                    voiceSelect.value = foundIndex;
+                    selectedVoiceIndex = foundIndex;
+                } else {
+                    const hoaiMyIndex = voices.findIndex(v => v.name.toLowerCase().includes("hoai my"));
+                    if (hoaiMyIndex !== -1) {
+                        voiceSelect.value = hoaiMyIndex;
+                        selectedVoiceIndex = hoaiMyIndex;
+                    } else {
+                        voiceSelect.value = 0;
+                        selectedVoiceIndex = 0;
+                    }
+                    if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
+                }
+            }
+
+            const savedRate = localStorage.getItem('ttsRate');
+            if (savedRate) {
+                currentRate = parseFloat(savedRate);
+                rateRange.value = currentRate;
+                rateValue.textContent = currentRate + 'x';
+            }
+        }
+
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        function updateVoice() {
+            selectedVoiceIndex = parseInt(voiceSelect.value);
+            if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
+            // If changing voice while playing, restart current sentence
+            if (isSpeaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                speakSentence();
+            }
+        }
+
+        function updateRate() {
+            currentRate = parseFloat(rateRange.value);
+            rateValue.textContent = currentRate + 'x';
+            localStorage.setItem('ttsRate', currentRate);
+            // If changing rate while playing, restart current sentence
+            if (isSpeaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                speakSentence();
+            }
+        }
+
+        // --- Core TTS Logic ---
+
+        function prepareContent() {
+            if (isContentPrepared) return;
+
+            const contentDiv = document.getElementById('chapter-text');
+            // Try to find paragraphs first
+            let blocks = Array.from(contentDiv.querySelectorAll('p'));
+
+            // If no paragraphs, try divs that look like text blocks, or just use contentDiv itself if it has text
+            if (blocks.length === 0) {
+                blocks = Array.from(contentDiv.querySelectorAll('div'));
+                if (blocks.length === 0 && contentDiv.innerText.trim().length > 0) {
+                    // Last resort: Treat the main container as one block
+                    blocks = [contentDiv];
+                }
+            }
+
+            if (blocks.length === 0) return;
+
+            let globalIndex = 0;
+
+            blocks.forEach(block => {
+                // Skip if block has no text or is script/style
+                if (!block.innerText.trim()) return;
+
+                // Avoid nested processing: if this block contains other processed blocks, skip it
+                if (block.querySelector('.tts-sentence')) return;
+
+                const text = block.innerText;
+                // Regex to split sentences (supporting Vietnamese chars if needed, but standard logic works well)
+                // Match sequence not containing .?!, followed by .?! OR end of string.
+                const sentences = text.match(/[^.?!]+[.?!]+|[^.?!]+$/g);
+
+                if (sentences && sentences.length > 0) {
+                    block.innerHTML = '';
+                    sentences.forEach(s => {
+                        if (!s.trim()) return;
+                        const span = document.createElement('span');
+                        span.className = 'tts-sentence';
+                        span.textContent = s;
+                        span.dataset.idx = globalIndex++;
+                        block.appendChild(span);
+                        block.appendChild(document.createTextNode(' '));
+                    });
+                }
+            });
+
+            ttsSentences = document.querySelectorAll('.tts-sentence');
+            if (ttsSentences.length > 0) {
+                isContentPrepared = true;
+            } else {
+                console.warn("TTS: No sentences found during preparation.");
+            }
+        }
+
+        function toggleAudio() {
+            if (!isContentPrepared) {
+                prepareContent();
+                // If initializing, ensure voices load
+                if (voices.length === 0) loadVoices();
+            }
+
+            if (isSpeaking && !isPaused) {
+                // Pause
+                window.speechSynthesis.cancel();
+                isPaused = true;
+                ttsBtn.textContent = '▶ Resume';
+                ttsBtn.classList.add('active'); // Keep active style
+            } else {
+                // Play or Resume
+                isSpeaking = true;
+                isPaused = false;
+                ttsBtn.textContent = '⏸ Pause';
+                ttsBtn.classList.add('active');
+                speakSentence();
+            }
+        }
+
+        function speakSentence() {
+            if (currentSentenceIdx >= ttsSentences.length) {
+                resetTTS();
+                return;
+            }
+
+            // Clean previous highlight
+            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+
+            const sentenceEl = ttsSentences[currentSentenceIdx];
+            if (!sentenceEl) return;
+
+            // Highlight
+            sentenceEl.classList.add('tts-highlight');
+
+            // Auto-Scroll (Smoothly, centered)
+            sentenceEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Create Utterance
+            const utterance = new SpeechSynthesisUtterance(sentenceEl.innerText);
+            utterance.rate = currentRate;
+            utterance.pitch = 1.0;
+            if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
+                utterance.voice = voices[selectedVoiceIndex];
+            }
+
+            utterance.onend = () => {
+                if (!isSpeaking || isPaused) return; // Stopped or Paused manually
+                currentSentenceIdx++;
+                speakSentence(); // Next
+            };
+
+            utterance.onerror = (e) => {
+                console.error("TTS Error", e);
+                // Try skipping to next if error
+                if (isSpeaking && !isPaused) {
+                    currentSentenceIdx++;
+                    speakSentence();
+                }
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function resetTTS() {
+            window.speechSynthesis.cancel();
+            isSpeaking = false;
+            isPaused = false;
+            currentSentenceIdx = 0;
+            ttsBtn.textContent = '🔊 Play';
+            ttsBtn.classList.remove('active');
+            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+        }
+
+        // Initial Load
+        loadVoices();
+
+        // Stop audio when leaving the page or unloading
+        window.addEventListener('beforeunload', () => {
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        });
     </script>
 </body>
 
