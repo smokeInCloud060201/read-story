@@ -16,6 +16,11 @@
             <a href="/docs/stories" class="brand">← Library</a>
 
             <div class="controls">
+                <!-- Work Mode Toggle -->
+                <button class="control-btn" onclick="toggleWorkMode()" id="workModeBtn" title="Stealth Mode">
+                    💼 Work Mode
+                </button>
+
                 <!-- Theme Switcher -->
                 <div class="control-group" role="group" aria-label="Theme Selection">
                     <button class="control-btn active" onclick="setTheme('light')"
@@ -35,9 +40,30 @@
     </header>
 
     <!-- Main Reading Area -->
-    <main class="reader-container">
+    <main class="reader-container" id="mainContainer">
+
+        <!-- Fake Sidebar Left -->
+        <aside class="sidebar-left">
+            <div class="sidebar-title">Project Structure</div>
+            <ul class="sidebar-list">
+                <li><a href="#">Introduction</a></li>
+                <li><a href="#">Getting Started</a></li>
+                <li><a href="#" class="active-item">Architecture Overview</a></li>
+                <li><a href="#">Authentication</a></li>
+                <li><a href="#">API Endpoints</a></li>
+                <li><a href="#">Database Schema</a></li>
+            </ul>
+            <div class="sidebar-title">Configuration</div>
+            <ul class="sidebar-list">
+                <li><a href="#">Environment Variables</a></li>
+                <li><a href="#">Docker Setup</a></li>
+                <li><a href="#">CI/CD Pipelines</a></li>
+            </ul>
+        </aside>
+
         <article>
             <header>
+                <div class="confidential-badge">Confidential</div>
                 <h1 th:text="${chapter != null ? chapter.title : 'Chapter Title'}">Chapter Title</h1>
                 <div class="meta-info">
                     <span th:if="${story != null}" th:text="${story.name}">Story Name</span>
@@ -70,12 +96,31 @@
             </nav>
 
         </article>
+
+        <!-- Fake Sidebar Right -->
+        <aside class="sidebar-right">
+            <div class="sidebar-title">On this page</div>
+            <ul class="sidebar-list">
+                <li><a href="#">Summary</a></li>
+                <li><a href="#">Specifications</a></li>
+                <li><a href="#">Implementation Details</a></li>
+            </ul>
+            <div class="sidebar-title">Contributors</div>
+            <div class="page-meta-list">
+                <div style="font-size: 13px; color: #42526e; margin-bottom: 8px;">Created by <br><strong>Admin
+                        User</strong></div>
+                <div style="font-size: 13px; color: #42526e;">Last updated <br><strong>Today</strong></div>
+            </div>
+        </aside>
+
     </main>
 
     <script>
         // Reader Logic
         const body = document.body;
+        const mainContainer = document.getElementById('mainContainer');
         const buttons = document.querySelectorAll('[onclick^="setTheme"]');
+        const workModeBtn = document.getElementById('workModeBtn');
 
         // Font Size State
         let currentFontSize = 20;
@@ -84,6 +129,7 @@
         function initReader() {
             const savedTheme = localStorage.getItem('readerTheme') || 'light';
             const savedSize = localStorage.getItem('readerFontSize');
+            const savedWorkMode = localStorage.getItem('readerWorkMode') === 'true';
 
             setTheme(savedTheme, false);
 
@@ -91,6 +137,32 @@
                 currentFontSize = parseInt(savedSize);
                 applyFontSize();
             }
+
+            if (savedWorkMode) {
+                toggleWorkMode(false);
+            }
+        }
+
+        // Work Mode Logic
+        function toggleWorkMode(save = true) {
+            body.classList.toggle('work-mode');
+            mainContainer.classList.toggle('work-mode-layout');
+
+            const isActive = body.classList.contains('work-mode');
+
+            if (isActive) {
+                workModeBtn.classList.add('active');
+                workModeBtn.textContent = 'Reading Mode';
+                // Theme is now preserved/selectable
+            } else {
+                workModeBtn.classList.remove('active');
+                workModeBtn.textContent = '💼 Work Mode';
+                // Restore user theme
+                const savedTheme = localStorage.getItem('readerTheme') || 'light';
+                setTheme(savedTheme, false);
+            }
+
+            if (save) localStorage.setItem('readerWorkMode', isActive);
         }
 
         // Theme Switcher
