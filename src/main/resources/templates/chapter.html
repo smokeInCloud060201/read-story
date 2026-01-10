@@ -274,6 +274,7 @@
         // State
         let isSpeaking = false;
         let isPaused = false;
+        let isListenMode = false;
 
         let ttsSentences = [];     // Array of span elements
         let currentSentenceIdx = 0;
@@ -283,6 +284,8 @@
 
         // Dom Prepared Flag
         let isContentPrepared = false;
+        let originalContentHTML = '';
+        let wasWorkModeActive = false;
 
         // Settings Modal
         function toggleSettings() {
@@ -354,7 +357,6 @@
         function updateVoice() {
             selectedVoiceIndex = parseInt(voiceSelect.value);
             if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
-            // If changing voice while playing, restart current sentence
             if (isSpeaking && !isPaused) {
                 window.speechSynthesis.cancel();
                 speakSentence();
@@ -365,7 +367,6 @@
             currentRate = parseFloat(rateRange.value);
             rateValue.textContent = currentRate + 'x';
             localStorage.setItem('ttsRate', currentRate);
-            // If changing rate while playing, restart current sentence
             if (isSpeaking && !isPaused) {
                 window.speechSynthesis.cancel();
                 speakSentence();
@@ -374,18 +375,63 @@
 
         // --- Core TTS Logic ---
 
+        function enterListenMode() {
+            if (isListenMode) return;
+            isListenMode = true;
+
+            // 1. Save Original Content
+            const contentDiv = document.getElementById('chapter-text');
+            originalContentHTML = contentDiv.innerHTML;
+
+            // 2. Switch to Work Mode (Listen Layout) if not active
+            wasWorkModeActive = document.body.classList.contains('work-mode');
+            if (!wasWorkModeActive) {
+                toggleWorkMode(false); // Enable temp
+            }
+
+            // 3. Prepare Content (Destructive)
+            prepareContent();
+
+            // 4. Show Stop Button (Create logic or Toggle visibility)
+            // We'll update the button text in toggleAudio mostly, looking for where to place Stop
+        }
+
+        function exitListenMode() {
+            if (!isListenMode) return;
+
+            // 1. Stop Audio
+            resetTTS();
+
+            // 2. Restore Content
+            const contentDiv = document.getElementById('chapter-text');
+            if (originalContentHTML) {
+                contentDiv.innerHTML = originalContentHTML;
+            }
+
+            // 3. Restore Layout
+            if (!wasWorkModeActive && document.body.classList.contains('work-mode')) {
+                toggleWorkMode(false); // Disable temp
+            }
+
+            // 4. Reset Flags
+            isListenMode = false;
+            isContentPrepared = false;
+            originalContentHTML = '';
+
+            // Reset UI
+            ttsBtn.textContent = '🔊 Play';
+            ttsBtn.classList.remove('active');
+        }
+
         function prepareContent() {
             if (isContentPrepared) return;
 
             const contentDiv = document.getElementById('chapter-text');
-            // Try to find paragraphs first
             let blocks = Array.from(contentDiv.querySelectorAll('p'));
 
-            // If no paragraphs, try divs that look like text blocks, or just use contentDiv itself if it has text
             if (blocks.length === 0) {
                 blocks = Array.from(contentDiv.querySelectorAll('div'));
                 if (blocks.length === 0 && contentDiv.innerText.trim().length > 0) {
-                    // Last resort: Treat the main container as one block
                     blocks = [contentDiv];
                 }
             }
@@ -395,15 +441,10 @@
             let globalIndex = 0;
 
             blocks.forEach(block => {
-                // Skip if block has no text or is script/style
                 if (!block.innerText.trim()) return;
-
-                // Avoid nested processing: if this block contains other processed blocks, skip it
                 if (block.querySelector('.tts-sentence')) return;
 
                 const text = block.innerText;
-                // Regex to split sentences (supporting Vietnamese chars if needed, but standard logic works well)
-                // Match sequence not containing .?!, followed by .?! OR end of string.
                 const sentences = text.match(/[^.?!]+[.?!]+|[^.?!]+$/g);
 
                 if (sentences && sentences.length > 0) {
@@ -423,53 +464,76 @@
             ttsSentences = document.querySelectorAll('.tts-sentence');
             if (ttsSentences.length > 0) {
                 isContentPrepared = true;
-            } else {
-                console.warn("TTS: No sentences found during preparation.");
             }
         }
 
         function toggleAudio() {
-            if (!isContentPrepared) {
-                prepareContent();
-                // If initializing, ensure voices load
+            // First click: Enter Listen Mode
+            if (!isListenMode) {
+                enterListenMode();
                 if (voices.length === 0) loadVoices();
-            }
 
-            if (isSpeaking && !isPaused) {
-                // Pause
-                window.speechSynthesis.cancel();
-                isPaused = true;
-                ttsBtn.textContent = '▶ Resume';
-                ttsBtn.classList.add('active'); // Keep active style
-            } else {
-                // Play or Resume
                 isSpeaking = true;
                 isPaused = false;
                 ttsBtn.textContent = '⏸ Pause';
                 ttsBtn.classList.add('active');
                 speakSentence();
-            }
-        }
 
-        function speakSentence() {
-            if (currentSentenceIdx >= ttsSentences.length) {
-                resetTTS();
+                // Add a Stop button if it doesn't exist
+                addStopButton();
                 return;
             }
 
-            // Clean previous highlight
+            // Subsequent clicks: Pause/Resume
+            if (isSpeaking && !isPaused) {
+                // Pause
+                window.speechSynthesis.cancel();
+                isPaused = true;
+                ttsBtn.textContent = '▶ Resume';
+            } else {
+                // Resume
+                isSpeaking = true;
+                isPaused = false;
+                ttsBtn.textContent = '⏸ Pause';
+                speakSentence();
+            }
+        }
+
+        function addStopButton() {
+            if (document.getElementById('ttsStopBtn')) return;
+
+            const stopBtn = document.createElement('button');
+            stopBtn.id = 'ttsStopBtn';
+            stopBtn.className = 'control-btn active'; // Style it
+            stopBtn.style.marginLeft = '8px';
+            stopBtn.textContent = '⏹ Stop';
+            stopBtn.onclick = () => {
+                exitListenMode();
+                stopBtn.remove();
+            };
+
+            // Insert after play button
+            ttsBtn.parentNode.insertBefore(stopBtn, ttsBtn.nextSibling);
+        }
+
+        function speakSentence() {
+            if (!isListenMode) return;
+
+            if (currentSentenceIdx >= ttsSentences.length) {
+                exitListenMode();
+                const stopBtn = document.getElementById('ttsStopBtn');
+                if (stopBtn) stopBtn.remove();
+                return;
+            }
+
             document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
 
             const sentenceEl = ttsSentences[currentSentenceIdx];
             if (!sentenceEl) return;
 
-            // Highlight
             sentenceEl.classList.add('tts-highlight');
-
-            // Auto-Scroll (Smoothly, centered)
             sentenceEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-            // Create Utterance
             const utterance = new SpeechSynthesisUtterance(sentenceEl.innerText);
             utterance.rate = currentRate;
             utterance.pitch = 1.0;
@@ -478,14 +542,13 @@
             }
 
             utterance.onend = () => {
-                if (!isSpeaking || isPaused) return; // Stopped or Paused manually
+                if (!isSpeaking || isPaused) return;
                 currentSentenceIdx++;
-                speakSentence(); // Next
+                speakSentence();
             };
 
             utterance.onerror = (e) => {
                 console.error("TTS Error", e);
-                // Try skipping to next if error
                 if (isSpeaking && !isPaused) {
                     currentSentenceIdx++;
                     speakSentence();
@@ -500,8 +563,6 @@
             isSpeaking = false;
             isPaused = false;
             currentSentenceIdx = 0;
-            ttsBtn.textContent = '🔊 Play';
-            ttsBtn.classList.remove('active');
             document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
         }
 
