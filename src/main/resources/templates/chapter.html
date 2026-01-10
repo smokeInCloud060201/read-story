@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${chapter != null ? chapter.title : 'Reader'}">Reader</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body class="reader-mode">
+
+    <!-- Reader Toolbar -->
+    <header class="toolbar">
+        <div class="toolbar-inner">
+            <a href="/docs/stories" class="brand">← Library</a>
+
+            <div class="controls">
+                <!-- Theme Switcher -->
+                <div class="control-group" role="group" aria-label="Theme Selection">
+                    <button class="control-btn active" onclick="setTheme('light')"
+                        aria-label="Light Theme">Light</button>
+                    <button class="control-btn" onclick="setTheme('sepia')" aria-label="Sepia Theme">Sepia</button>
+                    <button class="control-btn" onclick="setTheme('gray')" aria-label="Gray Theme">Gray</button>
+                    <button class="control-btn" onclick="setTheme('dark')" aria-label="Dark Theme">Dark</button>
+                </div>
+
+                <!-- Font Size Controls -->
+                <div class="control-group" role="group" aria-label="Font Size">
+                    <button class="control-btn" onclick="adjustFontSize(-2)" aria-label="Decrease Font Size">A−</button>
+                    <button class="control-btn" onclick="adjustFontSize(2)" aria-label="Increase Font Size">A+</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Reading Area -->
+    <main class="reader-container">
+        <article>
+            <header>
+                <h1 th:text="${chapter != null ? chapter.title : 'Chapter Title'}">Chapter Title</h1>
+                <div class="meta-info">
+                    <span th:if="${story != null}" th:text="${story.name}">Story Name</span>
+                    <span th:if="${chapterIndex != null}"> • Section <span th:text="${chapterIndex}">1</span></span>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="chapter-content" id="chapter-text" th:if="${chapter != null and chapter.content != null}">
+                <div th:utext="${chapter.content}">
+                    <p>Lorem ipsum dolor sit amet...</p>
+                </div>
+            </div>
+
+            <div th:if="${chapter == null}" class="chapter-content">
+                <p>No content available.</p>
+            </div>
+
+            <!-- Navigation Footer -->
+            <nav class="story-nav">
+                <a th:if="${previousChapter != null}"
+                    th:href="@{/docs/stories/{storyId}/chapters/{chapterId}(storyId=${story.id}, chapterId=${previousChapter.id})}"
+                    class="nav-link">← Previous</a>
+                <span th:if="${previousChapter == null}" class="nav-link disabled">← Previous</span>
+
+                <a th:if="${nextChapter != null}"
+                    th:href="@{/docs/stories/{storyId}/chapters/{chapterId}(storyId=${story.id}, chapterId=${nextChapter.id})}"
+                    class="nav-link">Next →</a>
+                <span th:if="${nextChapter == null}" class="nav-link disabled">Next →</span>
+            </nav>
+
+        </article>
+    </main>
+
+    <script>
+        // Reader Logic
+        const body = document.body;
+        const buttons = document.querySelectorAll('[onclick^="setTheme"]');
+
+        // Font Size State
+        let currentFontSize = 20;
+
+        // Initialize from localStorage
+        function initReader() {
+            const savedTheme = localStorage.getItem('readerTheme') || 'light';
+            const savedSize = localStorage.getItem('readerFontSize');
+
+            setTheme(savedTheme, false);
+
+            if (savedSize) {
+                currentFontSize = parseInt(savedSize);
+                applyFontSize();
+            }
+        }
+
+        // Theme Switcher
+        function setTheme(themeName, save = true) {
+            // Set Attribute
+            if (themeName === 'light') {
+                body.removeAttribute('data-theme');
+            } else {
+                body.setAttribute('data-theme', themeName);
+            }
+
+            // Update Buttons
+            buttons.forEach(btn => {
+                const label = btn.getAttribute('aria-label').toLowerCase();
+                if (label.includes(themeName)) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            if (save) localStorage.setItem('readerTheme', themeName);
+        }
+
+        // Font Size Adjustment
+        function adjustFontSize(delta) {
+            currentFontSize += delta;
+
+            // Clamp between 18px and 26px (extended range for flexibility)
+            if (currentFontSize < 16) currentFontSize = 16;
+            if (currentFontSize > 28) currentFontSize = 28;
+
+            applyFontSize();
+            localStorage.setItem('readerFontSize', currentFontSize);
+        }
+
+        function applyFontSize() {
+            body.style.fontSize = currentFontSize + 'px';
+        }
+
+        // Run Init
+        initReader();
+    </script>
+</body>
+
+</html>

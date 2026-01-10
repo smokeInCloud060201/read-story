@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Index | Internal Documentation Portal</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-inner">
+            <a href="/docs/stories" class="header-title">📚 Documentation Portal</a>
+            <nav class="header-nav">
+                <a href="/docs/stories">Documentation</a>
+                <a href="#">API Reference</a>
+                <a href="#">Resources</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <ul class="breadcrumb-list">
+            <li class="breadcrumb-item">
+                <a href="/docs/stories">Documentation</a>
+            </li>
+            <li class="breadcrumb-separator">/</li>
+            <li class="breadcrumb-item">
+                <span class="breadcrumb-current">Index</span>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="main-content">
+            <!-- Page Header -->
+            <div class="page-header">
+                <h1 class="page-title">Documentation Index</h1>
+                <p class="page-subtitle">Internal project documentation and technical specifications</p>
+            </div>
+
+            <!-- Document List Table -->
+            <div class="section">
+                <h2 class="section-header">Available Documents</h2>
+
+                <div th:if="${stories != null and !stories.isEmpty()}">
+                    <table class="doc-table">
+                        <thead>
+                            <tr>
+                                <th>Document ID</th>
+                                <th>Document Name</th>
+                                <th>Created</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="story : ${stories}">
+                                <td class="text-mono" th:text="${'DOC-' + story.id}">DOC-001</td>
+                                <td>
+                                    <a th:href="@{/docs/stories/{name}/chapters(name=${story.name})}"
+                                        th:text="${story.name}">Document Name</a>
+                                </td>
+                                <td th:text="${#temporals.format(story.createdAt, 'yyyy-MM-dd')}">2024-01-01</td>
+                                <td>
+                                    <span class="status-badge status-active">Active</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div th:if="${stories == null or stories.isEmpty()}" class="empty-state">
+                    <div class="empty-state-title">No documents found</div>
+                    <p class="empty-state-description">There are currently no documents available in the system.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Internal Documentation Portal © 2024 | Version 1.0.0 | For internal use only</p>
+        </div>
+    </div>
+</body>
+
+</html>

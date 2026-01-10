@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${story != null ? story.name + ' - Table of Contents' : 'Table of Contents'}">Document - Table of
+        Contents</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-inner">
+            <a href="/docs/stories" class="header-title">📚 Documentation Portal</a>
+            <nav class="header-nav">
+                <a href="/docs/stories">Documentation</a>
+                <a href="#">API Reference</a>
+                <a href="#">Resources</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <ul class="breadcrumb-list">
+            <li class="breadcrumb-item">
+                <a href="/docs/stories">Documentation</a>
+            </li>
+            <li class="breadcrumb-separator">/</li>
+            <li class="breadcrumb-item">
+                <span class="breadcrumb-current" th:text="${story != null ? story.name : 'Document'}">Document
+                    Name</span>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="main-content">
+            <!-- Document Overview -->
+            <div class="page-header">
+                <h1 class="page-title" th:text="${story != null ? story.name : 'Document'}">Document Name</h1>
+                <p class="page-subtitle">Technical specification and content sections</p>
+            </div>
+
+            <!-- Document Metadata -->
+            <div class="doc-metadata" th:if="${story != null}">
+                <div class="metadata-row">
+                    <span class="metadata-label">Document ID:</span>
+                    <span class="metadata-value" th:text="${'DOC-' + story.id}">DOC-001</span>
+                </div>
+                <div class="metadata-row">
+                    <span class="metadata-label">Created:</span>
+                    <span class="metadata-value"
+                        th:text="${#temporals.format(story.createdAt, 'yyyy-MM-dd HH:mm:ss')}">2024-01-01
+                        10:00:00</span>
+                </div>
+
+                <div class="metadata-row">
+                    <span class="metadata-label">Total Sections:</span>
+                    <span class="metadata-value" th:text="${totalChapters != null ? totalChapters : 0}">0</span>
+                </div>
+            </div>
+
+            <!-- Table of Contents -->
+            <div class="section">
+                <h2 class="section-header">Table of Contents</h2>
+
+                <div th:if="${chapters != null and !chapters.isEmpty()}">
+                    <table class="doc-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 100px;">Section #</th>
+                                <th>Section Title</th>
+                                <th style="width: 180px;">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="chapter, iterStat : ${chapters}">
+                                <td class="text-mono"
+                                    th:text="${'SECT-' + (page.number * page.size + iterStat.index + 1)}">SECT-1</td>
+                                <td>
+                                    <a th:href="@{/docs/stories/{storyId}/chapters/{chapterId}(storyId=${story.name}, chapterId=${chapter.id})}"
+                                        th:text="${chapter.title}">Chapter Title</a>
+                                </td>
+                                <td th:text="${#temporals.format(chapter.createdAt, 'yyyy-MM-dd')}">2024-01-01</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                </div>
+
+                <div th:if="${chapters == null or chapters.isEmpty()}" class="empty-state">
+                    <div class="empty-state-title">No sections found</div>
+                    <p class="empty-state-description">This document currently has no sections.</p>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination" th:if="${page != null and page.totalPages > 1}">
+                    <div class="pagination-info">
+                        Showing <span th:text="${page.number * page.size + 1}">1</span> to
+                        <span
+                            th:text="${(page.number + 1) * page.size > page.totalElements ? page.totalElements : (page.number + 1) * page.size}">50</span>
+                        of <span th:text="${page.totalElements}">50</span> sections
+                    </div>
+                    <div class="pagination-controls">
+                        <a th:href="@{/docs/stories/{storyId}/chapters(storyId=${story.name}, page=${page.number - 1}, size=${page.size})}"
+                            class="pagination-button" th:classappend="${page.first} ? 'disabled' : ''"
+                            th:if="${!page.first}">Previous</a>
+                        <span class="pagination-button disabled" th:if="${page.first}">Previous</span>
+
+                        <!-- Page Numbers -->
+                        <th:block th:each="i : ${#numbers.sequence(0, page.totalPages - 1)}">
+                            <a th:href="@{/docs/stories/{storyId}/chapters(storyId=${story.name}, page=${i}, size=${page.size})}"
+                                class="pagination-button" th:classappend="${page.number == i} ? 'active' : ''"
+                                th:if="${i >= page.number - 2 and i <= page.number + 2}" th:text="${i + 1}">1</a>
+                        </th:block>
+
+                        <a th:href="@{/docs/stories/{storyId}/chapters(storyId=${story.name}, page=${page.number + 1}, size=${page.size})}"
+                            class="pagination-button" th:classappend="${page.last} ? 'disabled' : ''"
+                            th:if="${!page.last}">Next</a>
+                        <span class="pagination-button disabled" th:if="${page.last}">Next</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="doc-navigation">
+                <a th:href="@{/docs/stories}" class="nav-button">← Back to Index</a>
+                <div></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Internal Documentation Portal © 2024 | Version 1.0.0 | For internal use only</p>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: postgres18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: stories
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg18-data:/var/lib/postgresql
+
+  api:
+    container_name: api
+    image: read-story:latest
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: root
+      DB_PASSWORD: admin123
+    ports:
+      - "8080:8080"
+
+volumes:
+  pg18-data:
