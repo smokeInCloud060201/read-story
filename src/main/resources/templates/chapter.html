@@ -99,12 +99,12 @@
             <!-- Navigation Footer -->
             <nav class="story-nav">
                 <a th:if="${previousChapter != null}"
-                    th:href="@{/docs/stories/{storyId}/chapters/{chapterId}(storyId=${story.id}, chapterId=${previousChapter.id})}"
+                    th:href="@{/docs/stories/{storyName}/chapters/{chapterId}(storyName=${story.name}, chapterId=${previousChapter.id})}"
                     class="nav-link">← Previous</a>
                 <span th:if="${previousChapter == null}" class="nav-link disabled">← Previous</span>
 
                 <a th:if="${nextChapter != null}"
-                    th:href="@{/docs/stories/{storyId}/chapters/{chapterId}(storyId=${story.id}, chapterId=${nextChapter.id})}"
+                    th:href="@{/docs/stories/{storyName}/chapters/{chapterId}(storyName=${story.name}, chapterId=${nextChapter.id})}"
                     class="nav-link">Next →</a>
                 <span th:if="${nextChapter == null}" class="nav-link disabled">Next →</span>
             </nav>
