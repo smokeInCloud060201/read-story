@@ -1,5 +1,4 @@
 package com.example.readstory.story.dto;
 
-import org.jsoup.nodes.Element;
-
-public record ChapterTask(Element element, int chapterKey, String rawKey) {}
+public record ChapterTask(String name, int chapterKey, String rawKey) {
+}

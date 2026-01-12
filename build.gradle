@@ -34,6 +34,9 @@ dependencies {
 
     implementation 'org.jsoup:jsoup:1.22.1'
     implementation 'org.apache.commons:commons-lang3:3.20.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+    implementation 'io.github.classgraph:classgraph:4.8.184'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-thymeleaf-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
