@@ -473,29 +473,25 @@
                 enterListenMode();
                 if (voices.length === 0) loadVoices();
 
+                // Add Stop button
+                addStopButton();
+            }
+
+            if (isSpeaking && !isPaused) {
+                // Pause
+                window.speechSynthesis.cancel(); // Clears browser queue
+                isPaused = true;
+                ttsBtn.textContent = '▶ Resume';
+                ttsBtn.classList.add('active');
+            } else {
+                // PLAY / RESUME
                 isSpeaking = true;
                 isPaused = false;
                 ttsBtn.textContent = '⏸ Pause';
                 ttsBtn.classList.add('active');
-                speakSentence();
 
-                // Add a Stop button if it doesn't exist
-                addStopButton();
-                return;
-            }
-
-            // Subsequent clicks: Pause/Resume
-            if (isSpeaking && !isPaused) {
-                // Pause
-                window.speechSynthesis.cancel();
-                isPaused = true;
-                ttsBtn.textContent = '▶ Resume';
-            } else {
-                // Resume
-                isSpeaking = true;
-                isPaused = false;
-                ttsBtn.textContent = '⏸ Pause';
-                speakSentence();
+                // Queue everything from current index
+                queueSpeech(currentSentenceIdx);
             }
         }
 
@@ -516,46 +512,52 @@
             ttsBtn.parentNode.insertBefore(stopBtn, ttsBtn.nextSibling);
         }
 
-        function speakSentence() {
+        function queueSpeech(startIndex) {
             if (!isListenMode) return;
 
-            if (currentSentenceIdx >= ttsSentences.length) {
-                exitListenMode();
-                const stopBtn = document.getElementById('ttsStopBtn');
-                if (stopBtn) stopBtn.remove();
-                return;
-            }
+            // Cancel any existing (just in case)
+            window.speechSynthesis.cancel();
 
-            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+            for (let i = startIndex; i < ttsSentences.length; i++) {
+                const sentenceEl = ttsSentences[i];
+                if (!sentenceEl) continue;
 
-            const sentenceEl = ttsSentences[currentSentenceIdx];
-            if (!sentenceEl) return;
-
-            sentenceEl.classList.add('tts-highlight');
-            sentenceEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            const utterance = new SpeechSynthesisUtterance(sentenceEl.innerText);
-            utterance.rate = currentRate;
-            utterance.pitch = 1.0;
-            if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
-                utterance.voice = voices[selectedVoiceIndex];
-            }
-
-            utterance.onend = () => {
-                if (!isSpeaking || isPaused) return;
-                currentSentenceIdx++;
-                speakSentence();
-            };
-
-            utterance.onerror = (e) => {
-                console.error("TTS Error", e);
-                if (isSpeaking && !isPaused) {
-                    currentSentenceIdx++;
-                    speakSentence();
+                const utterance = new SpeechSynthesisUtterance(sentenceEl.innerText);
+                utterance.rate = currentRate;
+                utterance.pitch = 1.0;
+                if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
+                    utterance.voice = voices[selectedVoiceIndex];
                 }
-            };
 
-            window.speechSynthesis.speak(utterance);
+                // Sync UI on Start
+                utterance.onstart = () => {
+                    // Update global index
+                    currentSentenceIdx = i;
+
+                    // Highlight
+                    document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+                    sentenceEl.classList.add('tts-highlight');
+
+                    // Scroll (only if needed/safe to avoid jumpiness, or stick to center)
+                    sentenceEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                };
+
+                // Cleanup on End (only if it's the last one)
+                utterance.onend = () => {
+                    if (i === ttsSentences.length - 1) {
+                        isSpeaking = false;
+                        ttsBtn.textContent = '🔊 Play';
+                        ttsBtn.classList.remove('active');
+                        currentSentenceIdx = 0;
+                    }
+                };
+
+                utterance.onerror = (e) => {
+                    console.error("TTS Error", e);
+                };
+
+                window.speechSynthesis.speak(utterance);
+            }
         }
 
         function resetTTS() {
@@ -563,6 +565,8 @@
             isSpeaking = false;
             isPaused = false;
             currentSentenceIdx = 0;
+            ttsBtn.textContent = '🔊 Play';
+            ttsBtn.classList.remove('active');
             document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
         }
 

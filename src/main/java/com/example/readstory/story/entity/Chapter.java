@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "chapter")
+@Table(name = "chapter", uniqueConstraints = {@UniqueConstraint(name = "uq_chapter_story_key", columnNames = {"story_id", "chapter_key"})})
 @Getter
 @Setter
 public class Chapter extends BaseEntity {
@@ -14,7 +14,7 @@ public class Chapter extends BaseEntity {
     @Column
     private String title;
 
-    @Column(unique = true)
+    @Column(unique = false)
     private Integer key;
 
     @Column(columnDefinition = "TEXT")

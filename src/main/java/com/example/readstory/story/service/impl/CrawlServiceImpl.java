@@ -4,6 +4,7 @@ import com.example.readstory.common.dto.RetrySpec;
 import com.example.readstory.common.service.HtmlParseService;
 import com.example.readstory.common.service.RetryService;
 import com.example.readstory.story.dto.ChapterDTO;
+import com.example.readstory.story.dto.ChapterTask;
 import com.example.readstory.story.entity.Chapter;
 import com.example.readstory.story.entity.Story;
 import com.example.readstory.story.repository.ChapterRepository;
@@ -16,17 +17,18 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +46,7 @@ public class CrawlServiceImpl implements CrawlService {
 
     private static final String CHAPTER_LIST_QUERY_SELECTOR = "select.chapter_jump option";
     private static final int MAX_CONCURRENCY = 10;
-    private static final int BATCH_SIZE = 200;
+    private static final int BATCH_SIZE = 100;
 
     @Override
     public ChapterDTO.StoryResponse crawlStory(String storyName) {
@@ -75,48 +77,27 @@ public class CrawlServiceImpl implements CrawlService {
     }
 
     @Override
-    @Retryable
     public List<ChapterDTO.ChapterResponse> getChapters(String url, Story story) {
         final Document document = htmlParseService.getDocument(url);
         final Elements chapterElements = htmlParseService.getElements(document, CHAPTER_LIST_QUERY_SELECTOR);
-
         final RetrySpec retrySpec = RetrySpec.of(5, 500, 8_000);
-        final Semaphore semaphore = new Semaphore(MAX_CONCURRENCY);
 
-        CompletionService<Chapter> completionService = new ExecutorCompletionService<>(virtualThreadExecutor);
+        final List<ChapterTask> chaptersToProcess = getProcessTask(chapterElements, story);
 
-        for (Element el : chapterElements) {
-            completionService.submit(() -> {
-                String chapterKey = el.attr("value");
-
-                try {
-                    semaphore.acquire();
-                    return retryService.execute(() -> crawlSingleChapter(story, chapterKey), retrySpec);
-
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return null;
-
-                } catch (Exception e) {
-                    log.error("Failed chapter {}", chapterKey, e);
-                    return null;
-
-                } finally {
-                    semaphore.release();
-                }
-            });
+        if (chaptersToProcess.isEmpty()) {
+            return List.of();
         }
+
+        CompletionService<Chapter> completionService = getChapterCompletionService(story, chaptersToProcess, retrySpec);
 
         List<Chapter> buffer = new ArrayList<>(BATCH_SIZE);
         List<ChapterDTO.ChapterResponse> responses = new ArrayList<>();
 
-        int totalTasks = chapterElements.size();
+        int totalTasks = chaptersToProcess.size();
 
-        // consume completed tasks
         for (int i = 0; i < totalTasks; i++) {
             try {
-                Future<Chapter> future = completionService.take(); // waits for ANY finished task
-                Chapter chapter = future.get();
+                Chapter chapter = completionService.take().get();
 
                 if (chapter != null) {
                     buffer.add(chapter);
@@ -132,7 +113,6 @@ public class CrawlServiceImpl implements CrawlService {
             }
         }
 
-        // persist remaining
         if (!buffer.isEmpty()) {
             persistBatch(buffer, responses);
         }
@@ -140,17 +120,35 @@ public class CrawlServiceImpl implements CrawlService {
         return responses;
     }
 
+    private CompletionService<Chapter> getChapterCompletionService(Story story, List<ChapterTask> tasks, RetrySpec retrySpec) {
 
-    private Chapter crawlSingleChapter(Story story, String key) {
-        Integer chapterKey = Integer.parseInt(key.split("-")[1]);
+        Semaphore semaphore = new Semaphore(MAX_CONCURRENCY);
 
-        final Optional<Chapter> optionalChapter = chapterRepository.findChapterByKeyAndStory_Id(chapterKey, story.getId());
+        CompletionService<Chapter> completionService = new ExecutorCompletionService<>(virtualThreadExecutor);
 
-        if (optionalChapter.isPresent()) {
-            return optionalChapter.get();
+        for (ChapterTask task : tasks) {
+            completionService.submit(() -> {
+                try {
+                    semaphore.acquire();
+                    return retryService.execute(() -> crawlSingleChapter(story, task), retrySpec);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                } catch (Exception e) {
+                    log.error("Failed chapter {}", task.rawKey(), e);
+                    return null;
+                } finally {
+                    semaphore.release();
+                }
+            });
         }
+        return completionService;
+    }
 
-        String chapterUrl = baseUrl + "/" + story.getName() + "/" + key;
+
+    private Chapter crawlSingleChapter(Story story, ChapterTask task) {
+
+        String chapterUrl = baseUrl + "/" + story.getName() + "/" + task.rawKey();
 
         log.info("#CrawlService: Crawling {}", chapterUrl);
 
@@ -159,23 +157,41 @@ public class CrawlServiceImpl implements CrawlService {
 
         String title = htmlParseService.getFirstElement(container, "a.chapter-title").attr("title");
 
-        Element contentEl = htmlParseService.getFirstElement(container, "#chapter-c");
-        String contentHtml = contentEl.html();
+        String contentHtml = htmlParseService.getFirstElement(container, "#chapter-c").html();
 
         Chapter chapter = new Chapter();
         chapter.setTitle(title);
         chapter.setContent(contentHtml);
         chapter.setStory(story);
-        chapter.setKey(chapterKey);
+        chapter.setKey(task.chapterKey());
 
         return chapter;
     }
 
     private void persistBatch(List<Chapter> batch, List<ChapterDTO.ChapterResponse> responses) {
         log.info("Saving batch of {} chapters", batch.size());
-
         List<Chapter> saved = chapterRepository.saveAll(batch);
-
         saved.forEach(c -> responses.add(ChapterDTO.ChapterResponse.builder().id(c.getId()).title(c.getTitle()).build()));
+    }
+
+    private List<ChapterTask> getProcessTask(Elements chapterElements, Story story) {
+        List<ChapterTask> tasks = chapterElements.stream().map(el -> {
+            String rawKey = el.attr("value");
+            try {
+                int chapterKey = Integer.parseInt(rawKey.split("-")[1]);
+                return new ChapterTask(el, chapterKey, rawKey);
+            } catch (Exception e) {
+                log.warn("Invalid chapter key: {}", rawKey);
+                return null;
+            }
+        }).filter(Objects::nonNull).toList();
+
+        if (tasks.isEmpty()) {
+            return List.of();
+        }
+
+        Set<Integer> existingKeys = chapterRepository.findExistingKeys(story.getId(), tasks.stream().map(ChapterTask::chapterKey).collect(Collectors.toSet()));
+
+        return tasks.stream().filter(t -> !existingKeys.contains(t.chapterKey())).toList();
     }
 }
