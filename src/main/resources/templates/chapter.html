@@ -348,6 +348,13 @@
                 rateRange.value = currentRate;
                 rateValue.textContent = currentRate + 'x';
             }
+
+            // Auto-Play Check
+            if (localStorage.getItem('ttsAutoPlay') === 'true' && !isSpeaking) {
+                localStorage.removeItem('ttsAutoPlay');
+                console.log("Auto-playing next chapter...");
+                toggleAudio();
+            }
         }
 
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
@@ -398,6 +405,9 @@
 
         function exitListenMode() {
             if (!isListenMode) return;
+
+            // Clear auto-play flag if user manually stops
+            localStorage.removeItem('ttsAutoPlay');
 
             // 1. Stop Audio
             resetTTS();
@@ -656,6 +666,17 @@
                     utterance.onend = () => {
                         // If this was the last chunk
                         if (blockEndIndex === ttsSentences.length - 1) {
+                            // AUTO-NEXT LOGIC
+                            const links = Array.from(document.querySelectorAll('nav.story-nav .nav-link'));
+                            const next = links.find(l => l.innerText.includes('Next') && !l.classList.contains('disabled'));
+
+                            if (next) {
+                                console.log("Chapter finished. Auto-navigating to:", next.href);
+                                localStorage.setItem('ttsAutoPlay', 'true');
+                                window.location.href = next.href;
+                                return;
+                            }
+
                             isSpeaking = false;
                             ttsBtn.textContent = '🔊 Play';
                             ttsBtn.classList.remove('active');
