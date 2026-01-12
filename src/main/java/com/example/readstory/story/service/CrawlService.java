@@ -7,6 +7,6 @@ import java.util.List;
 
 public interface CrawlService {
 
-    ChapterDTO.StoryResponse crawlStory(String storyName);
+    void crawlStory(String storyName);
     List<ChapterDTO.ChapterResponse> getChapters(String url, Story story);
 }

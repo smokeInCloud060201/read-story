@@ -427,13 +427,22 @@
             if (isContentPrepared) return;
 
             const contentDiv = document.getElementById('chapter-text');
-            let blocks = Array.from(contentDiv.querySelectorAll('p'));
+            // Support P and DIV as blocks
+            let blocks = Array.from(contentDiv.querySelectorAll('p, div'));
 
-            if (blocks.length === 0) {
-                blocks = Array.from(contentDiv.querySelectorAll('div'));
-                if (blocks.length === 0 && contentDiv.innerText.trim().length > 0) {
-                    blocks = [contentDiv];
-                }
+            // Fallback: if no blocks found, use the main container as one block
+            if (blocks.length === 0 && contentDiv.innerText.trim().length > 0) {
+                blocks = [contentDiv];
+            } else {
+                // Filter out blocks that contain other blocks (nested divs) to avoid double processing
+                // We only want the leaf-ish blocks that actually contain text directly
+                blocks = blocks.filter(b => {
+                    // If it has block children, it's a container, not a text block (mostly)
+                    // But simple check: does it have significant direct text?
+                    // A safe heuristic for this reader: just ignore it if it's already processed or empty
+                    if (b.querySelector('.tts-sentence')) return false;
+                    return b.innerText.trim().length > 0;
+                });
             }
 
             if (blocks.length === 0) return;
@@ -441,23 +450,61 @@
             let globalIndex = 0;
 
             blocks.forEach(block => {
-                if (!block.innerText.trim()) return;
+                // Skip if already processed
                 if (block.querySelector('.tts-sentence')) return;
 
                 const text = block.innerText;
-                const sentences = text.match(/[^.?!]+[.?!]+|[^.?!]+$/g);
+                // Regex handles split carefully. 
+                // We map sentences back to their offsets for `onboundary`
 
-                if (sentences && sentences.length > 0) {
+                // Matches sentence + punctuation OR trailing text.
+                const sentenceMatches = text.match(/[^.?!]+[.?!]+|[^.?!]+$/g);
+
+                if (sentenceMatches && sentenceMatches.length > 0) {
                     block.innerHTML = '';
-                    sentences.forEach(s => {
+
+                    let currentOffset = 0;
+
+                    sentenceMatches.forEach(s => {
                         if (!s.trim()) return;
+
+                        // Create span
                         const span = document.createElement('span');
                         span.className = 'tts-sentence';
                         span.textContent = s;
                         span.dataset.idx = globalIndex++;
+
+                        // CRITICAL: Store start/end char offsets for this sentence 
+                        // relative to the start of the block's text.
+                        span.dataset.blockStart = currentOffset;
+                        span.dataset.blockEnd = currentOffset + s.length;
+
+                        // Increment offset (text length)
+                        currentOffset += s.length;
+                        // Add implied space length to offset if we add space node?
+                        // innerText usually eats the space node, but for SpeechSynthesis, 
+                        // we pass the concatenated text. 
+                        // Actually, the simplest way for `onboundary` is to rely on the 
+                        // text we actually pass to the Utterance.
+
                         block.appendChild(span);
-                        block.appendChild(document.createTextNode(' '));
+
+                        // We add a space for visual separation, but we won't count it in the 
+                        // offset logic because we will reconstruct the text from the Spans usually,
+                        // OR we map slightly fuzzy. 
+                        // BETTER STRATEGY: 
+                        // The Utterance will receive `block.innerText`. 
+                        // `block.innerText` usually includes the spaces between elements.
+                        // So we should account for that space in `currentOffset`.
+
+                        const space = document.createTextNode(' ');
+                        block.appendChild(space);
+                        currentOffset += 1; // Approximate 1 char for space
                     });
+
+                    // Store the full block text on the parent for easy access? 
+                    // Or just read innerText at playtime.
+                    block.dataset.ttsBlock = "true";
                 }
             });
 
@@ -515,70 +562,117 @@
         function queueSpeech(startIndex) {
             if (!isListenMode) return;
 
-            // Cancel any existing (just in case)
             window.speechSynthesis.cancel();
 
-            for (let i = startIndex; i < ttsSentences.length; i++) {
-                const sentenceEl = ttsSentences[i];
-                if (!sentenceEl) continue;
+            if (startIndex >= ttsSentences.length) {
+                resetTTS();
+                return;
+            }
 
-                const utterance = new SpeechSynthesisUtterance(sentenceEl.innerText);
-                utterance.rate = currentRate;
-                utterance.pitch = 1.0;
-                if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
-                    utterance.voice = voices[selectedVoiceIndex];
+            // We need to identify which sentences belong to the same block (paragraph).
+            // We will iterate through ttsSentences starting at startIndex.
+            // We group consecutive sentences that share the same parent Element.
+
+            let i = startIndex;
+            while (i < ttsSentences.length) {
+                const startSentence = ttsSentences[i];
+                const parentBlock = startSentence.parentElement;
+
+                // Find all subsequent sentences in this SAME block
+                let blockEndIndex = i;
+                while (blockEndIndex < ttsSentences.length - 1 &&
+                    ttsSentences[blockEndIndex + 1].parentElement === parentBlock) {
+                    blockEndIndex++;
                 }
 
-                // Sync UI on Start
-                utterance.onstart = () => {
-                    // Update global index
-                    currentSentenceIdx = i;
+                // Now we have a range [i, blockEndIndex] representing the chunk to speak.
 
-                    // Highlight
-                    document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
-                    sentenceEl.classList.add('tts-highlight');
+                // Construct the text. 
+                // If i == startSentence (i.e., we are starting from the beginning of a block),
+                // we can just speak the `parentBlock.innerText`. 
+                // IF we are resuming in the middle of a block, we need to substring.
 
-                    // Scroll (only if needed/safe to avoid jumpiness, or stick to center)
-                    sentenceEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                };
+                // Gather texts from spans to be precise (ignoring extra white space in parent)
+                let textChunk = "";
+                let sentencesInChunk = [];
 
-                // Cleanup on End (only if it's the last one)
-                utterance.onend = () => {
-                    if (i === ttsSentences.length - 1) {
-                        isSpeaking = false;
-                        ttsBtn.textContent = '🔊 Play';
-                        ttsBtn.classList.remove('active');
-                        currentSentenceIdx = 0;
+                // Calculation for offsets relative to THIS CHUNK
+                let chunkOffset = 0;
+
+                for (let k = i; k <= blockEndIndex; k++) {
+                    const el = ttsSentences[k];
+                    const txt = el.textContent + " "; // Add space back for flow
+
+                    // We need to update the element's temporary offset for THIS specific utterance
+                    // because onboundary returns charIndex relative to the utterance start.
+                    el.dataset.currentChunkStart = chunkOffset;
+                    el.dataset.currentChunkEnd = chunkOffset + txt.length;
+
+                    textChunk += txt;
+                    chunkOffset += txt.length;
+                    sentencesInChunk.push(el);
+                }
+
+                if (textChunk.trim().length > 0) {
+                    const utterance = new SpeechSynthesisUtterance(textChunk);
+                    utterance.rate = currentRate;
+                    utterance.pitch = 1.0;
+                    if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
+                        utterance.voice = voices[selectedVoiceIndex];
                     }
-                };
 
-                utterance.onerror = (e) => {
-                    console.error("TTS Error", e);
-                };
+                    // -- Events --
 
-                window.speechSynthesis.speak(utterance);
+                    // 1. On Start: Just ensure the global index is updated to the start of this chunk
+                    utterance.onstart = () => {
+                        currentSentenceIdx = i;
+                    };
+
+                    // 2. On Boundary: The magic sauce for highlighting
+                    utterance.onboundary = (event) => {
+                        if (event.name !== 'word' && event.name !== 'sentence') return;
+
+                        const charPos = event.charIndex;
+
+                        // Find which sentence this charPos belongs to
+                        const activeSentence = sentencesInChunk.find(s => {
+                            const start = parseInt(s.dataset.currentChunkStart);
+                            const end = parseInt(s.dataset.currentChunkEnd);
+                            return charPos >= start && charPos < end;
+                        });
+
+                        if (activeSentence) {
+                            // Update Highlight
+                            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+                            activeSentence.classList.add('tts-highlight');
+                            activeSentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                            // Update Global Index tracked
+                            currentSentenceIdx = parseInt(activeSentence.dataset.idx);
+                        }
+                    };
+
+                    // 3. On End: Check if we are done with the whole story
+                    utterance.onend = () => {
+                        // If this was the last chunk
+                        if (blockEndIndex === ttsSentences.length - 1) {
+                            isSpeaking = false;
+                            ttsBtn.textContent = '🔊 Play';
+                            ttsBtn.classList.remove('active');
+                            currentSentenceIdx = 0;
+                            if (document.getElementById('ttsStopBtn')) document.getElementById('ttsStopBtn').remove();
+                        }
+                    };
+
+                    utterance.onerror = (e) => console.error(e);
+
+                    window.speechSynthesis.speak(utterance);
+                }
+
+                // Advance loop
+                i = blockEndIndex + 1;
             }
         }
-
-        function resetTTS() {
-            window.speechSynthesis.cancel();
-            isSpeaking = false;
-            isPaused = false;
-            currentSentenceIdx = 0;
-            ttsBtn.textContent = '🔊 Play';
-            ttsBtn.classList.remove('active');
-            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
-        }
-
-        // Initial Load
-        loadVoices();
-
-        // Stop audio when leaving the page or unloading
-        window.addEventListener('beforeunload', () => {
-            if (window.speechSynthesis) {
-                window.speechSynthesis.cancel();
-            }
-        });
     </script>
 </body>
 

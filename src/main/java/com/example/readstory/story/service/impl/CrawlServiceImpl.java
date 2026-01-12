@@ -17,6 +17,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -46,10 +47,12 @@ public class CrawlServiceImpl implements CrawlService {
 
     private static final String CHAPTER_LIST_QUERY_SELECTOR = "select.chapter_jump option";
     private static final int MAX_CONCURRENCY = 10;
-    private static final int BATCH_SIZE = 100;
+    private static final int CHAPTER_PERSIST_BATCH_SIZE = 100;
+    private static final int CHAPTER_PROCESS_BATCH_SIZE = 400;
 
     @Override
-    public ChapterDTO.StoryResponse crawlStory(String storyName) {
+    @Async
+    public void crawlStory(String storyName) {
         if (StringUtils.isBlank(storyName)) {
             throw new IllegalArgumentException("storyName is blank");
         }
@@ -71,9 +74,7 @@ public class CrawlServiceImpl implements CrawlService {
             story = storyRepository.save(s);
         }
 
-        List<ChapterDTO.ChapterResponse> chapters = getChapters(String.format("%s/ajax.php?type=chapter_option&data=%s", baseUrl, storyId), story);
-
-        return ChapterDTO.StoryResponse.builder().chapterResponseList(chapters).size(Optional.ofNullable(chapters).map(List::size).orElse(0)).build();
+        getChapters(String.format("%s/ajax.php?type=chapter_option&data=%s", baseUrl, storyId), story);
     }
 
     @Override
@@ -88,22 +89,54 @@ public class CrawlServiceImpl implements CrawlService {
             return List.of();
         }
 
-        CompletionService<Chapter> completionService = getChapterCompletionService(story, chaptersToProcess, retrySpec);
-
-        List<Chapter> buffer = new ArrayList<>(BATCH_SIZE);
         List<ChapterDTO.ChapterResponse> responses = new ArrayList<>();
+        List<List<ChapterTask>> batches = new ArrayList<>();
 
-        int totalTasks = chaptersToProcess.size();
+        for (int i = 0; i < chaptersToProcess.size(); i += CHAPTER_PROCESS_BATCH_SIZE) {
+            int end = Math.min(i + CHAPTER_PROCESS_BATCH_SIZE, chaptersToProcess.size());
+            batches.add(chaptersToProcess.subList(i, end));
+        }
+
+        log.info("Total chapters to process: {}. Split into {} batches.", chaptersToProcess.size(), batches.size());
+
+        for (int i = 0; i < batches.size(); i++) {
+            List<ChapterTask> batch = batches.get(i);
+            log.info("Processing batch {}/{} with {} items", i + 1, batches.size(), batch.size());
+
+            processChapterBatch(batch, story, retrySpec, responses);
+
+            // Sleep if there are more batches
+            if (i < batches.size() - 1) {
+                try {
+                    log.info("Sleeping for 10 minutes before next batch...");
+                    Thread.sleep(10 * 60 * 1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Sleep interrupted between batches", e);
+                    break;
+                }
+            }
+        }
+
+        return responses;
+    }
+
+    private void processChapterBatch(List<ChapterTask> tasks, Story story, RetrySpec retrySpec, List<ChapterDTO.ChapterResponse> responses) {
+        CompletionService<Chapter> completionService = getChapterCompletionService(story, tasks, retrySpec);
+
+        List<Chapter> buffer = new ArrayList<>(CHAPTER_PERSIST_BATCH_SIZE);
+        int totalTasks = tasks.size();
 
         for (int i = 0; i < totalTasks; i++) {
             try {
+                // Wait for completion
                 Chapter chapter = completionService.take().get();
 
                 if (chapter != null) {
                     buffer.add(chapter);
                 }
 
-                if (buffer.size() == BATCH_SIZE) {
+                if (buffer.size() == CHAPTER_PERSIST_BATCH_SIZE) {
                     persistBatch(buffer, responses);
                     buffer.clear();
                 }
@@ -116,8 +149,6 @@ public class CrawlServiceImpl implements CrawlService {
         if (!buffer.isEmpty()) {
             persistBatch(buffer, responses);
         }
-
-        return responses;
     }
 
     private CompletionService<Chapter> getChapterCompletionService(Story story, List<ChapterTask> tasks, RetrySpec retrySpec) {
@@ -144,7 +175,6 @@ public class CrawlServiceImpl implements CrawlService {
         }
         return completionService;
     }
-
 
     private Chapter crawlSingleChapter(Story story, ChapterTask task) {
 

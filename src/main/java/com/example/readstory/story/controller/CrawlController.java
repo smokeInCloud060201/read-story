@@ -2,7 +2,6 @@ package com.example.readstory.story.controller;
 
 import com.example.readstory.common.dto.BaseResponse;
 import com.example.readstory.common.utils.BaseResponseMapper;
-import com.example.readstory.story.dto.ChapterDTO;
 import com.example.readstory.story.service.CrawlService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,7 +17,8 @@ public class CrawlController {
     private final CrawlService crawlService;
 
     @PostMapping("/{story_name}")
-    public BaseResponse<ChapterDTO.StoryResponse> crawlStory(@PathVariable("story_name") String storyName) {
-        return BaseResponseMapper.toSuccess(crawlService.crawlStory(storyName));
+    public BaseResponse<Void> crawlStory(@PathVariable("story_name") String storyName) {
+        crawlService.crawlStory(storyName);
+        return BaseResponseMapper.toSuccess(null);
     }
 }
