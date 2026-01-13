@@ -78,12 +78,9 @@ public class CrawlServiceImpl implements CrawlService {
     }
 
     private List<ChapterTask> filterExistingChapters(List<ChapterTask> tasks, Story story) {
-        if (tasks.isEmpty())
-            return List.of();
+        if (tasks.isEmpty()) return List.of();
 
-        Set<Integer> existingKeys = chapterRepository.findExistingKeys(
-                story.getId(),
-                tasks.stream().map(ChapterTask::chapterKey).collect(Collectors.toSet()));
+        Set<Integer> existingKeys = chapterRepository.findExistingKeys(story.getId(), tasks.stream().map(ChapterTask::chapterKey).collect(Collectors.toSet()));
 
         return tasks.stream().filter(t -> !existingKeys.contains(t.chapterKey())).toList();
     }
@@ -96,8 +93,7 @@ public class CrawlServiceImpl implements CrawlService {
             int end = Math.min(i + CHAPTER_PROCESS_BATCH_SIZE, tasks.size());
             List<ChapterTask> batch = tasks.subList(i, end);
 
-            log.info("Processing batch {}/{} with {} items", (i / CHAPTER_PROCESS_BATCH_SIZE) + 1,
-                    (tasks.size() + CHAPTER_PROCESS_BATCH_SIZE - 1) / CHAPTER_PROCESS_BATCH_SIZE, batch.size());
+            log.info("Processing batch {}/{} with {} items", (i / CHAPTER_PROCESS_BATCH_SIZE) + 1, (tasks.size() + CHAPTER_PROCESS_BATCH_SIZE - 1) / CHAPTER_PROCESS_BATCH_SIZE, batch.size());
             processChapterBatch(strategy, batch, story, retrySpec, responses);
 
             if (end < tasks.size()) {
@@ -113,8 +109,7 @@ public class CrawlServiceImpl implements CrawlService {
         }
     }
 
-    private void processChapterBatch(CrawlStrategy strategy, List<ChapterTask> tasks, Story story, RetrySpec retrySpec,
-            List<ChapterDTO.ChapterResponse> responses) {
+    private void processChapterBatch(CrawlStrategy strategy, List<ChapterTask> tasks, Story story, RetrySpec retrySpec, List<ChapterDTO.ChapterResponse> responses) {
         CompletionService<Chapter> completionService = new ExecutorCompletionService<>(virtualThreadExecutor);
         Semaphore semaphore = new Semaphore(MAX_CONCURRENCY);
 
@@ -160,7 +155,6 @@ public class CrawlServiceImpl implements CrawlService {
     private void persistBatch(List<Chapter> batch, List<ChapterDTO.ChapterResponse> responses) {
         log.info("Saving batch of {} chapters", batch.size());
         List<Chapter> saved = chapterRepository.saveAll(batch);
-        saved.forEach(
-                c -> responses.add(ChapterDTO.ChapterResponse.builder().id(c.getId()).title(c.getTitle()).build()));
+        saved.forEach(c -> responses.add(ChapterDTO.ChapterResponse.builder().id(c.getId()).title(c.getTitle()).build()));
     }
 }

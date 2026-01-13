@@ -286,6 +286,7 @@
         let isContentPrepared = false;
         let originalContentHTML = '';
         let wasWorkModeActive = false;
+        let ttsKeepAlive = null; // Fix for stoppage bug
 
         // Settings Modal
         function toggleSettings() {
@@ -366,7 +367,7 @@
             if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
             if (isSpeaking && !isPaused) {
                 window.speechSynthesis.cancel();
-                speakSentence();
+                queueSpeech(currentSentenceIdx);
             }
         }
 
@@ -376,7 +377,7 @@
             localStorage.setItem('ttsRate', currentRate);
             if (isSpeaking && !isPaused) {
                 window.speechSynthesis.cancel();
-                speakSentence();
+                queueSpeech(currentSentenceIdx);
             }
         }
 
@@ -625,11 +626,24 @@
 
                 if (textChunk.trim().length > 0) {
                     const utterance = new SpeechSynthesisUtterance(textChunk);
+
+                    // CRITICAL FIX: Prevent Garbage Collection
+                    window.currentUtterance = utterance;
+
                     utterance.rate = currentRate;
                     utterance.pitch = 1.0;
                     if (selectedVoiceIndex >= 0 && voices[selectedVoiceIndex]) {
                         utterance.voice = voices[selectedVoiceIndex];
                     }
+
+                    // CRITICAL FIX: Prevent Chrome timeout (15s bug)
+                    clearInterval(ttsKeepAlive);
+                    ttsKeepAlive = setInterval(() => {
+                        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+                            window.speechSynthesis.pause();
+                            window.speechSynthesis.resume();
+                        }
+                    }, 14000);
 
                     // -- Events --
 
@@ -683,9 +697,13 @@
                             currentSentenceIdx = 0;
                             if (document.getElementById('ttsStopBtn')) document.getElementById('ttsStopBtn').remove();
                         }
+                        clearInterval(ttsKeepAlive);
                     };
 
-                    utterance.onerror = (e) => console.error(e);
+                    utterance.onerror = (e) => {
+                        console.error(e);
+                        clearInterval(ttsKeepAlive);
+                    };
 
                     window.speechSynthesis.speak(utterance);
                 }
@@ -694,6 +712,27 @@
                 i = blockEndIndex + 1;
             }
         }
+        function resetTTS() {
+            window.speechSynthesis.cancel();
+            clearInterval(ttsKeepAlive);
+            isSpeaking = false;
+            isPaused = false;
+            currentSentenceIdx = 0;
+            ttsBtn.textContent = '🔊 Play';
+            ttsBtn.classList.remove('active');
+            document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+        }
+
+        // Initial Load
+        loadVoices();
+
+        // Stop audio when leaving the page or unloading
+        window.addEventListener('beforeunload', () => {
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                clearInterval(ttsKeepAlive);
+            }
+        });
     </script>
 </body>
 
