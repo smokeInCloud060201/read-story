@@ -22,6 +22,7 @@ public class StoryServiceImpl implements StoryService {
 
     private final StoryRepository storyRepository;
     private final ChapterRepository chapterRepository;
+    private final com.example.readstory.story.repository.BookmarkRepository bookmarkRepository;
 
     @Override
     public BaseResponse<ChapterDTO.StoryResponse> getStoryByName(String name) {
@@ -51,6 +52,30 @@ public class StoryServiceImpl implements StoryService {
     @Override
     public Chapter findChapterById(Long chapterId) {
         return chapterRepository.findById(chapterId).orElse(null);
+    }
+
+    @Override
+    public void saveBookmark(Long storyId, Long chapterId) {
+        Story story = storyRepository.findById(storyId).orElseThrow(() -> new RuntimeException("Story not found"));
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new RuntimeException("Chapter not found"));
+
+        com.example.readstory.story.entity.Bookmark bookmark = bookmarkRepository.findByStoryId(storyId)
+                .orElse(new com.example.readstory.story.entity.Bookmark());
+
+        bookmark.setStory(story);
+        bookmark.setChapter(chapter);
+        bookmarkRepository.save(bookmark);
+    }
+
+    @Override
+    public void deleteBookmark(Long bookmarkId) {
+        bookmarkRepository.deleteById(bookmarkId);
+    }
+
+    @Override
+    public List<com.example.readstory.story.entity.Bookmark> findAllBookmarks() {
+        return bookmarkRepository.findAll();
     }
 
 }

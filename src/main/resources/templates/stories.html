@@ -43,6 +43,44 @@
                 <p class="page-subtitle">Internal project documentation and technical specifications</p>
             </div>
 
+            <!-- Bookmarks Section -->
+            <div class="section" th:if="${bookmarks != null and !bookmarks.isEmpty()}">
+                <h2 class="section-header">Reference Bookmarks</h2>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Story</th>
+                            <th>Chapter</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr th:each="bookmark : ${bookmarks}">
+                            <td th:text="${bookmark.story.name}">Story Name</td>
+                            <td>
+                                <a th:href="@{/docs/stories/{storyName}/chapters/{chapterId}(storyName=${bookmark.story.name}, chapterId=${bookmark.chapter.id})}"
+                                    th:text="${bookmark.chapter.title}">Chapter Title</a>
+                            </td>
+                            <td>
+                                <button class="control-btn" style="padding: 2px 8px; font-size: 12px;"
+                                    th:onclick="'deleteBookmark(' + ${bookmark.id} + ')'">Remove</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <script>
+                    function deleteBookmark(id) {
+                        if (confirm('Remove this bookmark?')) {
+                            fetch('/api/bookmarks/' + id, { method: 'DELETE' })
+                                .then(response => {
+                                    if (response.ok) location.reload();
+                                    else alert('Failed to remove bookmark.');
+                                });
+                        }
+                    }
+                </script>
+            </div>
+
             <!-- Document List Table -->
             <div class="section">
                 <h2 class="section-header">Available Documents</h2>

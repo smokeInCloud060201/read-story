@@ -16,9 +16,13 @@
             <a href="/docs/stories" class="brand">← Library</a>
 
             <div class="controls">
-                <!-- Work Mode Toggle -->
                 <button class="control-btn" onclick="toggleWorkMode()" id="workModeBtn" title="Stealth Mode">
                     💼 Work Mode
+                </button>
+
+                <!-- Bookmark Button -->
+                <button class="control-btn" onclick="bookmarkChapter()" id="bookmarkBtn" title="Bookmark this chapter">
+                    🔖 Bookmark
                 </button>
 
                 <!-- Theme Switcher -->
@@ -260,6 +264,33 @@
 
         function applyFontSize() {
             body.style.fontSize = currentFontSize + 'px';
+        }
+
+        // Bookmark Logic
+        function bookmarkChapter() {
+            const storyId = [[${ story.id }]];
+            const chapterId = [[${ chapter.id }]];
+            const bookmarkBtn = document.getElementById('bookmarkBtn');
+
+            fetch(`/api/bookmarks?storyId=${storyId}&chapterId=${chapterId}`, {
+                method: 'POST'
+            })
+                .then(response => {
+                    if (response.ok) {
+                        bookmarkBtn.textContent = '✅ Bookmarked';
+                        bookmarkBtn.classList.add('active');
+                        setTimeout(() => {
+                            bookmarkBtn.textContent = '🔖 Bookmark';
+                            bookmarkBtn.classList.remove('active');
+                        }, 2000);
+                    } else {
+                        alert('Failed to bookmark chapter.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error bookmarking chapter:', error);
+                    alert('An error occurred while bookmarking.');
+                });
         }
 
         // Run Init

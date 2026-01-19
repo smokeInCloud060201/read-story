@@ -21,4 +21,10 @@ public interface StoryService {
     Page<Chapter> findChaptersByStoryId(Long storyId, Pageable pageable);
 
     Chapter findChapterById(Long chapterId);
+
+    void saveBookmark(Long storyId, Long chapterId);
+
+    void deleteBookmark(Long bookmarkId);
+
+    List<com.example.readstory.story.entity.Bookmark> findAllBookmarks();
 }

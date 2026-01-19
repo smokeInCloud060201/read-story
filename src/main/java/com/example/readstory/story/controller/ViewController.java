@@ -30,7 +30,9 @@ public class ViewController {
     @GetMapping("/docs/stories")
     public String listStories(Model model) {
         List<Story> stories = storyService.findAllStories();
+        List<com.example.readstory.story.entity.Bookmark> bookmarks = storyService.findAllBookmarks();
         model.addAttribute("stories", stories);
+        model.addAttribute("bookmarks", bookmarks);
         return "stories";
     }
 
