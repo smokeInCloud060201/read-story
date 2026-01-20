@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ chapter.title.as_deref().unwrap_or("Reader") }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="reader-mode" data-story-id="{{ story.id }}" data-chapter-id="{{ chapter.id }}">
+
+    <!-- Reader Toolbar -->
+    <header class="toolbar">
+        <div class="toolbar-inner">
+            <a href="/docs/stories" class="brand">← Library</a>
+
+            <div class="controls">
+                <button class="control-btn" onclick="toggleWorkMode()" id="workModeBtn" title="Stealth Mode">
+                    💼 Work Mode
+                </button>
+
+                <!-- Bookmark Button -->
+                <button class="control-btn" onclick="bookmarkChapter()" id="bookmarkBtn" title="Bookmark this chapter">
+                    🔖 Bookmark
+                </button>
+
+                <!-- Theme Switcher -->
+                <div class="control-group" role="group" aria-label="Theme Selection">
+                    <button class="control-btn active" onclick="setTheme('light')"
+                        aria-label="Light Theme">Light</button>
+                    <button class="control-btn" onclick="setTheme('sepia')" aria-label="Sepia Theme">Sepia</button>
+                    <button class="control-btn" onclick="setTheme('gray')" aria-label="Gray Theme">Gray</button>
+                    <button class="control-btn" onclick="setTheme('dark')" aria-label="Dark Theme">Dark</button>
+                </div>
+
+                <!-- Font Size Controls -->
+                <div class="control-group" role="group" aria-label="Font Size">
+                    <button class="control-btn" onclick="adjustFontSize(-2)" aria-label="Decrease Font Size">A−</button>
+                    <button class="control-btn" onclick="adjustFontSize(2)" aria-label="Increase Font Size">A+</button>
+                </div>
+
+                <!-- TTS Controls -->
+                <div class="control-group" role="group" aria-label="TTS Controls">
+                    <button class="control-btn" onclick="toggleAudio()" id="ttsBtn" aria-label="Play Audio">
+                        🔊 Play
+                    </button>
+                    <button class="control-btn" onclick="toggleSettings()" id="settingsBtn" aria-label="TTS Settings">
+                        ⚙️
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Reading Area -->
+    <main class="reader-container" id="mainContainer">
+
+        <!-- Fake Sidebar Left -->
+        <aside class="sidebar-left">
+            <div class="sidebar-title">Project Structure</div>
+            <ul class="sidebar-list">
+                <li><a href="#">Introduction</a></li>
+                <li><a href="#">Getting Started</a></li>
+                <li><a href="#" class="active-item">Architecture Overview</a></li>
+                <li><a href="#">Authentication</a></li>
+                <li><a href="#">API Endpoints</a></li>
+            </ul>
+        </aside>
+
+        <article>
+            <header>
+                <div class="confidential-badge">Confidential</div>
+                <h1>{{ chapter.title.as_deref().unwrap_or("Chapter Title") }}</h1>
+                <div class="meta-info">
+                    <span>{{ story.name }}</span>
+                    <span> • Section <span>{{ chapter_index }}</span></span>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="chapter-content" id="chapter-text">
+                {% if let Some(content) = chapter.content %}
+                {{ content|safe }}
+                {% else %}
+                <p>No content available.</p>
+                {% endif %}
+            </div>
+
+            <!-- Navigation Footer -->
+            <nav class="story-nav">
+                {% if let Some(prev) = previous_chapter %}
+                <a href="/docs/stories/{{ story.name }}/chapters/{{ prev.id }}" class="nav-link">← Previous</a>
+                {% else %}
+                <span class="nav-link disabled">← Previous</span>
+                {% endif %}
+
+                {% if let Some(next) = next_chapter %}
+                <a href="/docs/stories/{{ story.name }}/chapters/{{ next.id }}" class="nav-link">Next →</a>
+                {% else %}
+                <span class="nav-link disabled">Next →</span>
+                {% endif %}
+            </nav>
+
+        </article>
+
+        <!-- Fake Sidebar Right -->
+        <aside class="sidebar-right">
+            <div class="sidebar-title">On this page</div>
+            <ul class="sidebar-list">
+                <li><a href="#">Summary</a></li>
+                <li><a href="#">Specifications</a></li>
+            </ul>
+        </aside>
+
+    </main>
+
+    <!-- TTS Settings Modal -->
+    <div class="modal-overlay" id="ttsSettingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">TTS Settings</h3>
+                <button class="close-modal" onclick="toggleSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="voiceSelect">Voice</label>
+                    <select id="voiceSelect" class="form-select" onchange="updateVoice()">
+                        <option value="">Default</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="rateRange">Speed: <span id="rateValue"
+                            class="range-value">1.0x</span></label>
+                    <input type="range" id="rateRange" class="form-range" min="0.5" max="2.0" step="0.1" value="1.0"
+                        oninput="updateRate()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Reader Logic
+        const body = document.body;
+        const mainContainer = document.getElementById('mainContainer');
+        const buttons = document.querySelectorAll('.toolbar .control-btn');
+        const workModeBtn = document.getElementById('workModeBtn');
+
+        let currentFontSize = 20;
+
+        function initReader() {
+            const savedTheme = localStorage.getItem('readerTheme') || 'light';
+            const savedSize = localStorage.getItem('readerFontSize');
+            const savedWorkMode = localStorage.getItem('readerWorkMode') === 'true';
+
+            setTheme(savedTheme, false);
+
+            if (savedSize) {
+                currentFontSize = parseInt(savedSize);
+                applyFontSize();
+            }
+
+            if (savedWorkMode) {
+                toggleWorkMode(false);
+            }
+        }
+
+        function toggleWorkMode(save = true) {
+            body.classList.toggle('work-mode');
+            mainContainer.classList.toggle('work-mode-layout');
+
+            const isActive = body.classList.contains('work-mode');
+
+            if (isActive) {
+                workModeBtn.classList.add('active');
+                workModeBtn.textContent = 'Reading Mode';
+            } else {
+                workModeBtn.classList.remove('active');
+                workModeBtn.textContent = '💼 Work Mode';
+                const savedTheme = localStorage.getItem('readerTheme') || 'light';
+                setTheme(savedTheme, false);
+            }
+
+            if (save) localStorage.setItem('readerWorkMode', isActive);
+        }
+
+        function setTheme(themeName, save = true) {
+            if (themeName === 'light') {
+                body.removeAttribute('data-theme');
+            } else {
+                body.setAttribute('data-theme', themeName);
+            }
+
+            document.querySelectorAll('[onclick^="setTheme"]').forEach(btn => {
+                const label = btn.getAttribute('aria-label').toLowerCase();
+                if (label.includes(themeName)) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            if (save) localStorage.setItem('readerTheme', themeName);
+        }
+
+        function adjustFontSize(delta) {
+            currentFontSize += delta;
+            if (currentFontSize < 16) currentFontSize = 16;
+            if (currentFontSize > 28) currentFontSize = 28;
+            applyFontSize();
+            localStorage.setItem('readerFontSize', currentFontSize);
+        }
+
+        function applyFontSize() {
+            body.style.fontSize = currentFontSize + 'px';
+        }
+
+        function bookmarkChapter() {
+            const storyId = body.dataset.storyId;
+            const chapterId = body.dataset.chapterId;
+            const bookmarkBtn = document.getElementById('bookmarkBtn');
+
+            fetch(`/api/v1/bookmarks?storyId=${storyId}&chapterId=${chapterId}`, {
+                method: "POST"
+            })
+                .then(response => {
+                    if (response.ok) {
+                        bookmarkBtn.textContent = '✅ Bookmarked';
+                        bookmarkBtn.classList.add('active');
+                        setTimeout(() => {
+                            bookmarkBtn.textContent = '🔖 Bookmark';
+                            bookmarkBtn.classList.remove('active');
+                        }, 2000);
+                    } else {
+                        alert('Failed to bookmark chapter.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error bookmarking.');
+                });
+        }
+
+        // TTS Logic
+        const ttsBtn = document.getElementById('ttsBtn');
+        const voiceSelect = document.getElementById('voiceSelect');
+        const rateRange = document.getElementById('rateRange');
+        const rateValue = document.getElementById('rateValue');
+
+        let isSpeaking = false;
+        let isPaused = false;
+        let isListenMode = false;
+        let ttsSentences = [];
+        let currentSentenceIdx = 0;
+        let voices = [];
+        let selectedVoiceIndex = -1;
+        let currentRate = 1.0;
+        let originalContentHTML = '';
+        let wasWorkModeActive = false;
+        let ttsKeepAlive = null;
+
+        function toggleSettings() {
+            const modal = document.getElementById('ttsSettingsModal');
+            modal.classList.toggle('active');
+            if (modal.classList.contains('active')) loadVoices();
+        }
+
+        function loadVoices() {
+            const allVoices = window.speechSynthesis.getVoices();
+            if (allVoices.length === 0) return;
+
+            voices = allVoices.filter(voice => voice.lang.includes('vi'));
+            voiceSelect.innerHTML = '';
+
+            if (voices.length === 0) {
+                const option = document.createElement('option');
+                option.textContent = "No Vietnamese voices found";
+                option.value = -1;
+                voiceSelect.appendChild(option);
+                voiceSelect.disabled = true;
+            } else {
+                voiceSelect.disabled = false;
+                voices.forEach((voice, index) => {
+                    const option = document.createElement('option');
+                    option.textContent = `${voice.name} (${voice.lang})`;
+                    option.value = index;
+                    voiceSelect.appendChild(option);
+                });
+
+                const savedVoiceName = localStorage.getItem('ttsVoiceName');
+                let foundIndex = -1;
+                if (savedVoiceName) foundIndex = voices.findIndex(v => v.name === savedVoiceName);
+
+                if (foundIndex !== -1) {
+                    voiceSelect.value = foundIndex;
+                    selectedVoiceIndex = foundIndex;
+                } else {
+                    const hoaiMyIndex = voices.findIndex(v => v.name.toLowerCase().includes("hoai my"));
+                    if (hoaiMyIndex !== -1) {
+                        voiceSelect.value = hoaiMyIndex;
+                        selectedVoiceIndex = hoaiMyIndex;
+                    } else {
+                        voiceSelect.value = 0;
+                        selectedVoiceIndex = 0;
+                    }
+                    if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
+                }
+            }
+
+            const savedRate = localStorage.getItem('ttsRate');
+            if (savedRate) {
+                currentRate = parseFloat(savedRate);
+                rateRange.value = currentRate;
+                rateValue.textContent = currentRate + 'x';
+            }
+        }
+
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        function updateVoice() {
+            selectedVoiceIndex = parseInt(voiceSelect.value);
+            if (voices[selectedVoiceIndex]) localStorage.setItem('ttsVoiceName', voices[selectedVoiceIndex].name);
+            if (isSpeaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                queueSpeech(currentSentenceIdx);
+            }
+        }
+
+        function updateRate() {
+            currentRate = parseFloat(rateRange.value);
+            rateValue.textContent = currentRate + 'x';
+            localStorage.setItem('ttsRate', currentRate);
+            if (isSpeaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                queueSpeech(currentSentenceIdx);
+            }
+        }
+
+        function toggleAudio() {
+            if (!isListenMode) {
+                isListenMode = true;
+                const contentDiv = document.getElementById('chapter-text');
+                originalContentHTML = contentDiv.innerHTML;
+                wasWorkModeActive = body.classList.contains('work-mode');
+                if (!wasWorkModeActive) toggleWorkMode(false);
+                prepareContent();
+                addStopButton();
+            }
+
+            if (isSpeaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                isPaused = true;
+                ttsBtn.textContent = '▶ Resume';
+            } else {
+                isSpeaking = true;
+                isPaused = false;
+                ttsBtn.textContent = '⏸ Pause';
+                queueSpeech(currentSentenceIdx);
+            }
+        }
+
+        function addStopButton() {
+            if (document.getElementById('ttsStopBtn')) return;
+            const stopBtn = document.createElement('button');
+            stopBtn.id = 'ttsStopBtn';
+            stopBtn.className = 'control-btn active';
+            stopBtn.style.marginLeft = '8px';
+            stopBtn.textContent = '⏹ Stop';
+            stopBtn.onclick = () => {
+                window.speechSynthesis.cancel();
+                const contentDiv = document.getElementById('chapter-text');
+                contentDiv.innerHTML = originalContentHTML;
+                if (!wasWorkModeActive) toggleWorkMode(false);
+                isListenMode = false;
+                isSpeaking = false;
+                isPaused = false;
+                currentSentenceIdx = 0;
+                ttsBtn.textContent = '🔊 Play';
+                stopBtn.remove();
+            };
+            ttsBtn.parentNode.insertBefore(stopBtn, ttsBtn.nextSibling);
+        }
+
+        function prepareContent() {
+            const contentDiv = document.getElementById('chapter-text');
+            // Support paragraphs and divs
+            const blocks = Array.from(contentDiv.querySelectorAll('p, div')).filter(b => b.innerText.trim().length > 0);
+
+            if (blocks.length === 0) {
+                const wrap = document.createElement('p');
+                wrap.innerHTML = contentDiv.innerHTML;
+                contentDiv.innerHTML = '';
+                contentDiv.appendChild(wrap);
+                blocks.push(wrap);
+            }
+
+            let globalIdx = 0;
+            blocks.forEach(block => {
+                const text = block.innerText;
+                const matches = text.match(/[^.?!]+[.?!]+|[^.?!]+$/g) || [];
+                block.innerHTML = '';
+                let offset = 0;
+                matches.forEach(s => {
+                    const span = document.createElement('span');
+                    span.className = 'tts-sentence';
+                    span.textContent = s;
+                    span.dataset.idx = globalIdx++;
+                    span.dataset.chunkStart = offset;
+                    span.dataset.chunkEnd = offset + s.length;
+                    block.appendChild(span);
+                    block.appendChild(document.createTextNode(' '));
+                    offset += s.length + 1; // +1 for the space
+                });
+            });
+
+            ttsSentences = Array.from(document.querySelectorAll('.tts-sentence'));
+        }
+
+        function queueSpeech(startIndex) {
+            if (!isListenMode || startIndex >= ttsSentences.length) {
+                if (startIndex >= ttsSentences.length) {
+                    const nextLink = document.querySelector('nav.story-nav a.nav-link:last-child:not(.disabled)');
+                    if (nextLink) window.location.href = nextLink.href;
+                }
+                return;
+            }
+
+            // SMOOTH TRANSITION: Group sentences from the SAME block/paragraph
+            const startNode = ttsSentences[startIndex];
+            const parent = startNode.parentElement;
+            let batchEndIdx = startIndex;
+            while (batchEndIdx + 1 < ttsSentences.length && ttsSentences[batchEndIdx + 1].parentElement === parent) {
+                batchEndIdx++;
+            }
+
+            let textChunk = "";
+            let chunkSentences = [];
+            for (let i = startIndex; i <= batchEndIdx; i++) {
+                textChunk += ttsSentences[i].textContent + " ";
+                chunkSentences.push(ttsSentences[i]);
+            }
+
+            const utterance = new SpeechSynthesisUtterance(textChunk);
+            utterance.rate = currentRate;
+            if (selectedVoiceIndex >= 0) utterance.voice = voices[selectedVoiceIndex];
+
+            utterance.onboundary = (event) => {
+                if (event.name !== 'word' && event.name !== 'sentence') return;
+                const charPos = event.charIndex;
+                const active = chunkSentences.find(s => {
+                    const sStart = parseInt(s.dataset.chunkStart);
+                    const sEnd = parseInt(s.dataset.chunkEnd);
+                    return charPos >= sStart && charPos < sEnd;
+                });
+
+                if (active) {
+                    document.querySelectorAll('.tts-highlight').forEach(el => el.classList.remove('tts-highlight'));
+                    active.classList.add('tts-highlight');
+                    active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    currentSentenceIdx = parseInt(active.dataset.idx);
+                }
+            };
+
+            utterance.onend = () => {
+                if (isSpeaking && !isPaused) queueSpeech(batchEndIdx + 1);
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        initReader();
+    </script>
+</body>
+
+</html>

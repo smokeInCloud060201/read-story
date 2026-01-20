@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Index | Internal Documentation Portal</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-inner">
+            <a href="/docs/stories" class="header-title">📚 Documentation Portal</a>
+            <nav class="header-nav">
+                <a href="/docs/stories">Documentation</a>
+                <a href="#">API Reference</a>
+                <a href="#">Resources</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <ul class="breadcrumb-list">
+            <li class="breadcrumb-item">
+                <a href="/docs/stories">Documentation</a>
+            </li>
+            <li class="breadcrumb-separator">/</li>
+            <li class="breadcrumb-item">
+                <span class="breadcrumb-current">Index</span>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="main-content">
+            <!-- Page Header -->
+            <div class="page-header">
+                <h1 class="page-title">Documentation Index</h1>
+                <p class="page-subtitle">Internal project documentation and technical specifications</p>
+            </div>
+
+            <!-- Bookmarks Section -->
+            {% if bookmarks.len() > 0 %}
+            <div class="section">
+                <h2 class="section-header">Reference Bookmarks</h2>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Story</th>
+                            <th>Chapter</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for bookmark in bookmarks %}
+                        <tr>
+                            <td>{{ bookmark.story_name }}</td>
+                            <td>
+                                <a href="/docs/stories/{{ bookmark.story_name }}/chapters/{{ bookmark.chapter_id }}">
+                                    {{ bookmark.chapter_title }}
+                                </a>
+                            </td>
+                            <td>
+                                <button class="control-btn" style="padding: 2px 8px; font-size: 12px;"
+                                    onclick="deleteBookmark({{ bookmark.id }})">Remove</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <script>
+                    function deleteBookmark(id) {
+                        if (confirm('Remove this bookmark?')) {
+                            // Updated to /api/v1/bookmarks/
+                            fetch('/api/v1/bookmarks/' + id, { method: 'DELETE' })
+                                .then(response => {
+                                    if (response.ok) location.reload();
+                                    else alert('Failed to remove bookmark.');
+                                });
+                        }
+                    }
+                </script>
+            </div>
+            {% endif %}
+
+            <!-- Document List Table -->
+            <div class="section">
+                <h2 class="section-header">Available Documents</h2>
+
+                {% if stories.len() > 0 %}
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Document ID</th>
+                            <th>Document Name</th>
+                            <th>Created</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for story in stories %}
+                        <tr>
+                            <td class="text-mono">DOC-{{ story.id }}</td>
+                            <td>
+                                <a href="/docs/stories/{{ story.name }}/chapters">
+                                    {{ story.name }}
+                                </a>
+                            </td>
+                            <td>{{ story.created_at }}</td>
+                            <td>
+                                <span class="status-badge status-active">Active</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-title">No documents found</div>
+                    <p class="empty-state-description">There are currently no documents available in the system.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Internal Documentation Portal © 2024 | Version 1.0.0 | For internal use only</p>
+        </div>
+    </div>
+</body>
+
+</html>
