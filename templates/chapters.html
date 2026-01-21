@@ -91,24 +91,90 @@
                 </div>
                 {% endif %}
 
-                <!-- Pagination (Simplified for now to avoid logic errors) -->
+                <!-- Pagination -->
                 {% if total_pages > 1 %}
                 <div class="pagination">
+
+                    <!-- Pagination info -->
                     <div class="pagination-info">
                         Showing page {{ current_page + 1 }} of {{ total_pages }}
                     </div>
+
+                    <!-- Askama data bridge -->
+                    <div id="paginationData" data-story-name="{{ story.name }}" data-total-pages="{{ total_pages }}"
+                        data-page-size="{{ page_size }}">
+                    </div>
+
                     <div class="pagination-controls">
+
                         {% if current_page > 0 %}
                         <a href="/docs/stories/{{ story.name }}/chapters?page={{ current_page - 1 }}&size={{ page_size }}"
-                            class="pagination-button">Previous</a>
+                            class="pagination-button">
+                            Previous
+                        </a>
                         {% endif %}
+
+                        <!-- Page numbers -->
+                        <div class="page-numbers" style="display: flex; gap: 4px; margin: 0 10px;">
+                            {% for item in display_items %}
+                            {% match item %}
+                            {% when PageItem::Page with (p) %}
+                            <a href="/docs/stories/{{ story.name }}/chapters?page={{ p }}&size={{ page_size }}"
+                                class="pagination-button {% if *p == current_page %}active{% endif %}">
+                                {{ p + 1 }}
+                            </a>
+                            {% when PageItem::Ellipsis %}
+                            <span class="pagination-ellipsis">...</span>
+                            {% endmatch %}
+                            {% endfor %}
+                        </div>
 
                         {% if current_page < total_pages - 1 %} <a
                             href="/docs/stories/{{ story.name }}/chapters?page={{ current_page + 1 }}&size={{ page_size }}"
-                            class="pagination-button">Next</a>
+                            class="pagination-button">
+                            Next
+                            </a>
                             {% endif %}
+
+                            <!-- Go to page -->
+                            <div class="goto-page"
+                                style="margin-left: 15px; display: flex; align-items: center; gap: 5px;">
+                                <input type="number" id="gotoPageInput" min="1" max="{{ total_pages }}"
+                                    placeholder="Page"
+                                    style="width: 60px; padding: 4px; border: 1px solid var(--ui-border); border-radius: 3px;">
+                                <button onclick="gotoPage()" class="pagination-button">Go</button>
+                            </div>
+
                     </div>
                 </div>
+
+                <script>
+                    (function () {
+                        const data = document.getElementById('paginationData');
+
+                        const storyName = data.dataset.storyName;
+                        const totalPages = parseInt(data.dataset.totalPages, 10);
+                        const pageSize = parseInt(data.dataset.pageSize, 10);
+
+                        window.gotoPage = function () {
+                            const input = document.getElementById('gotoPageInput');
+                            const page = parseInt(input.value, 10);
+
+                            if (!Number.isNaN(page) && page >= 1 && page <= totalPages) {
+                                window.location.href =
+                                    `/docs/stories/${storyName}/chapters?page=${page - 1}&size=${pageSize}`;
+                            }
+                        };
+
+                        document
+                            .getElementById('gotoPageInput')
+                            .addEventListener('keypress', function (e) {
+                                if (e.key === 'Enter') {
+                                    window.gotoPage();
+                                }
+                            });
+                    })();
+                </script>
                 {% endif %}
             </div>
 

@@ -86,6 +86,12 @@ pub struct ChapterView {
     pub created_at: String,
 }
 
+#[derive(serde::Serialize)]
+pub enum PageItem {
+    Page(i64),
+    Ellipsis,
+}
+
 #[derive(Template)]
 #[template(path = "chapters.html")]
 pub struct ChaptersTemplate {
@@ -95,6 +101,7 @@ pub struct ChaptersTemplate {
     pub total_pages: i64,
     pub total_elements: i64,
     pub page_size: i64,
+    pub display_items: Vec<PageItem>,
 }
 
 #[get("/docs/stories/{story_name}/chapters")]
@@ -123,6 +130,20 @@ pub async fn list_chapters(
     let total_elements = db::count_chapters_by_story_id(&pool, story.id).await.unwrap_or(0);
     let total_pages = if size > 0 { (total_elements as f64 / size as f64).ceil() as i64 } else { 0 };
 
+    let mut display_items = Vec::new();
+    if total_pages > 0 {
+        let mut last_page = -1;
+        for i in 0..total_pages {
+            if i < 5 || i == total_pages - 1 || (i >= page - 2 && i <= page + 2) {
+                if last_page != -1 && i > last_page + 1 {
+                    display_items.push(PageItem::Ellipsis);
+                }
+                display_items.push(PageItem::Page(i));
+                last_page = i;
+            }
+        }
+    }
+
     let s = ChaptersTemplate {
         story,
         chapters,
@@ -130,6 +151,7 @@ pub async fn list_chapters(
         total_pages,
         total_elements,
         page_size: size,
+        display_items,
     };
 
     match s.render() {

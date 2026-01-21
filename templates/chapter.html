@@ -163,6 +163,22 @@
             if (savedWorkMode) {
                 toggleWorkMode(false);
             }
+
+            // Handle Autoplay
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('autoplay') === 'true') {
+                // Wait for voices to be ready
+                if (window.speechSynthesis.getVoices().length > 0) {
+                    toggleAudio();
+                } else {
+                    window.speechSynthesis.onvoiceschanged = () => {
+                        loadVoices();
+                        toggleAudio();
+                        // Reset onvoiceschanged to avoid multiple triggers if it fires again
+                        window.speechSynthesis.onvoiceschanged = loadVoices;
+                    };
+                }
+            }
         }
 
         function toggleWorkMode(save = true) {
@@ -257,7 +273,7 @@
         let currentRate = 1.0;
         let originalContentHTML = '';
         let wasWorkModeActive = false;
-        let ttsKeepAlive = null;
+        let activeUtterance = null; // Prevent GC
 
         function toggleSettings() {
             const modal = document.getElementById('ttsSettingsModal');
@@ -421,8 +437,13 @@
         function queueSpeech(startIndex) {
             if (!isListenMode || startIndex >= ttsSentences.length) {
                 if (startIndex >= ttsSentences.length) {
+                    // Navigate to next chapter with autoplay
                     const nextLink = document.querySelector('nav.story-nav a.nav-link:last-child:not(.disabled)');
-                    if (nextLink) window.location.href = nextLink.href;
+                    if (nextLink) {
+                        const href = nextLink.href;
+                        const separator = href.includes('?') ? '&' : '?';
+                        window.location.href = href + separator + 'autoplay=true';
+                    }
                 }
                 return;
             }
@@ -442,11 +463,21 @@
                 chunkSentences.push(ttsSentences[i]);
             }
 
-            const utterance = new SpeechSynthesisUtterance(textChunk);
-            utterance.rate = currentRate;
-            if (selectedVoiceIndex >= 0) utterance.voice = voices[selectedVoiceIndex];
+            activeUtterance = new SpeechSynthesisUtterance(textChunk);
+            activeUtterance.rate = currentRate;
+            if (selectedVoiceIndex >= 0) activeUtterance.voice = voices[selectedVoiceIndex];
 
-            utterance.onboundary = (event) => {
+            // Keep-alive heartbeat (fix for stopping randomly)
+            const heartbeat = setInterval(() => {
+                if (window.speechSynthesis.speaking) {
+                    window.speechSynthesis.pause();
+                    window.speechSynthesis.resume();
+                } else {
+                    clearInterval(heartbeat);
+                }
+            }, 10000);
+
+            activeUtterance.onboundary = (event) => {
                 if (event.name !== 'word' && event.name !== 'sentence') return;
                 const charPos = event.charIndex;
                 const active = chunkSentences.find(s => {
@@ -463,11 +494,21 @@
                 }
             };
 
-            utterance.onend = () => {
+            activeUtterance.onend = () => {
+                clearInterval(heartbeat);
+                activeUtterance = null;
                 if (isSpeaking && !isPaused) queueSpeech(batchEndIdx + 1);
             };
 
-            window.speechSynthesis.speak(utterance);
+            activeUtterance.onerror = (e) => {
+                console.error('Speech error:', e);
+                clearInterval(heartbeat);
+                activeUtterance = null;
+                // Retry if it's intermittent
+                if (isSpeaking && !isPaused) setTimeout(() => queueSpeech(startIndex), 1000);
+            };
+
+            window.speechSynthesis.speak(activeUtterance);
         }
 
         initReader();
